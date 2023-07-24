@@ -6,7 +6,7 @@ require (
 	dies.dev v0.8.0
 	github.com/fluxcd/pkg/apis/meta v1.1.1
 	github.com/fluxcd/pkg/sourceignore v0.3.4
-	github.com/fluxcd/source-controller/api v0.36.1
+	github.com/fluxcd/source-controller/api v1.0.1
 	github.com/go-logr/logr v1.2.4
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.10
