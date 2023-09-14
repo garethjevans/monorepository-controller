@@ -27,8 +27,8 @@ github.com/fluxcd/pkg/apis/meta v1.1.2 h1:Unjo7hxadtB2dvGpeFqZZUdsjpRA08YYSBb7dF
 github.com/fluxcd/pkg/apis/meta v1.1.2/go.mod h1:BHQyRHCskGMEDf6kDGbgQ+cyiNpUHbLsCOsaMYM2maI=
 github.com/fluxcd/pkg/sourceignore v0.3.5 h1:omcHTH5X5tlPr9w1b9T7WuJTOP+o/KdVdarYb4kgkCU=
 github.com/fluxcd/pkg/sourceignore v0.3.5/go.mod h1:6Xz3jErz8RsidsdrjUBBUGKes24rbdp/F38MnTGibEw=
-github.com/fluxcd/source-controller/api v0.36.1 h1:/ul69kJNEwrFG1Cwk2P/GwgraIxOETCL+tP+zMtxTu8=
-github.com/fluxcd/source-controller/api v0.36.1/go.mod h1:GktZmd5Dfxo84vPFBdLDl0bBtiJRODfd47uugK0romU=
+github.com/fluxcd/source-controller/api v1.1.0 h1:JPtt9WTTqVNdJfPpea8q7fUWF/00kDihxbhISzcb0WE=
+github.com/fluxcd/source-controller/api v1.1.0/go.mod h1:ZLkaUd1KQIjtLPCvO63Ni5zpnSTVBAkeRgFBzMItbDQ=
 github.com/fsnotify/fsnotify v1.6.0 h1:n+5WquG0fcWoWp6xPWfHdbskMCQaFnG6PfBrh1Ky4HY=
 github.com/fsnotify/fsnotify v1.6.0/go.mod h1:sl3t1tCWJFWoRz9R8WJCbQihKKwmorjAbSClcnxKAGw=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=
