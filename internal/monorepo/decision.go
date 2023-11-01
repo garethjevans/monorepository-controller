@@ -3,8 +3,9 @@ package monorepo
 import (
 	"context"
 	"fmt"
-	"github.com/jenkins-x/go-scm/scm"
 	"strings"
+
+	"github.com/jenkins-x/go-scm/scm"
 )
 
 func DetermineClonePoint(client *scm.Client, repository string, branch string, previousCommit string, subPath string) (string, error) {

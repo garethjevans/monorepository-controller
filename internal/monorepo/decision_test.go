@@ -1,10 +1,11 @@
 package monorepo_test
 
 import (
-	"github.com/garethjevans/monorepository-controller/internal/monorepo"
-	"github.com/jenkins-x/go-scm/scm/factory"
 	"os"
 	"testing"
+
+	"github.com/garethjevans/monorepository-controller/internal/monorepo"
+	"github.com/jenkins-x/go-scm/scm/factory"
 )
 
 func TestGetClone(t *testing.T) {

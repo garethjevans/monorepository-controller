@@ -19,15 +19,16 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/garethjevans/monorepository-controller/internal/monorepo"
 	"github.com/jenkins-x/go-scm/scm/factory"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
-	"net/url"
-	"strings"
-	"time"
 
 	apiv1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
@@ -67,7 +68,7 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 			// FIXME how do I get the secret for this?
 			// FIXME we now need to do most of the work in here
 
-			serverURL, repository := ParseUrlIntoServerAndPath(parent.Spec.GitRepository.URL)
+			serverURL, repository := ParseURLIntoServerAndPath(parent.Spec.GitRepository.URL)
 
 			secret := FindSecret(secrets, serverURL)
 
@@ -184,7 +185,7 @@ func FindSecret(list corev1.SecretList, serverURL string) *corev1.Secret {
 	return nil
 }
 
-func ParseUrlIntoServerAndPath(in string) (string, string) {
+func ParseURLIntoServerAndPath(in string) (string, string) {
 	u, err := url.Parse(in)
 	if err != nil {
 		panic(err)

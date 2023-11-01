@@ -1,10 +1,11 @@
 package controller_test
 
 import (
-	"github.com/fluxcd/pkg/apis/meta"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/fluxcd/pkg/apis/meta"
 
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
 	"github.com/garethjevans/monorepository-controller/internal/controller"
