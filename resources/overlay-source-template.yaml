@@ -5,7 +5,7 @@ metadata:
   namespace: tap-install
 type: Opaque
 stringData:
-  patch.yml: |
+  patch1.yml: |
     #@ load("@ytt:overlay", "overlay")
     #@overlay/match by=overlay.subset({"kind":"ClusterSourceTemplate", "metadata": {"name":"source-template"}}),expects="1+"
     ---
