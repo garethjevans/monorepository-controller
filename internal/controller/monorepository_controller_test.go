@@ -1,7 +1,11 @@
 package controller_test
 
 import (
+	"os"
 	"testing"
+	"time"
+
+	"github.com/fluxcd/pkg/apis/meta"
 
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
 	"github.com/garethjevans/monorepository-controller/internal/controller"
@@ -43,53 +47,65 @@ func TestMonoRepository(t *testing.T) {
 
 	go ServeDir(t, "testdata")
 
+	githubSecret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "github-creds",
+			Namespace: "dev",
+			Annotations: map[string]string{
+				"tekton.dev/git-0": "https://github.com",
+			},
+		},
+		Data: map[string][]byte{
+			"username": []byte("garethjevans"),
+			"password": []byte(os.Getenv("GITHUB_TOKEN")),
+		},
+		Type: "kubernetes.io/basic-auth",
+	}
+
+	gitlabSecret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gitlab-creds",
+			Namespace: "dev",
+			Annotations: map[string]string{
+				"tekton.dev/git-0": "https://gitlab.eng.vmware.com",
+			},
+		},
+		Data: map[string][]byte{
+			"username": []byte("gevans"),
+			"password": []byte(os.Getenv("GITLAB_TOKEN")),
+		},
+		Type: "kubernetes.io/basic-auth",
+	}
+
 	ts := rtesting.SubReconcilerTests[*v1alpha1.MonoRepository]{
-		"Contains a sub resource": {
+		"Fails when no auth is found": {
+			ShouldErr: true,
 			Resource: baseMonoRepo.
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					})
 				}).DieReleasePtr(),
 
 			ExpectResource: baseMonoRepo.
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					})
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
-					d.ConditionsDie(
-					//resources.ManagedResourceHealthyBlank.Reason("ReadyCondition").Unknown().Message("condition with type [Ready] not found on resource status"),
-					)
+					d.ConditionsDie()
 				}).DieReleasePtr(),
-
-			ExpectCreates: []client.Object{
-				&apiv1beta2.GitRepository{
-					TypeMeta: metav1.TypeMeta{},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "mono-repository",
-						Namespace: "dev",
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								APIVersion:         "source.garethjevans.org/v1alpha1",
-								Kind:               "MonoRepository",
-								Name:               "mono-repository",
-								Controller:         pointer.Bool(true),
-								BlockOwnerDeletion: pointer.Bool(true),
-							},
-						},
-					},
-					Spec: apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
-					},
-					Status: apiv1beta2.GitRepositoryStatus{},
-				},
-			},
-
-			ExpectEvents: []rtesting.Event{
-				rtesting.NewEvent(baseMonoRepo, scheme, corev1.EventTypeNormal, "Created", "Created GitRepository %q", "mono-repository"),
-			},
 		},
 
 		"Will reconcile a passing gitrepository": {
@@ -99,8 +115,9 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					})
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
@@ -113,25 +130,23 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					}).DieReleasePtr()
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
-					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=")).DieReleasePtr()
+					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum 531d5230bf97e76e168d1817de64a161195f433d")).DieReleasePtr()
 					d.Artifact(&v1alpha1.Artifact{
-						Path:           "gitrepository/dev/my-mono-repository/531d5230bf97e76e168d1817de64a161195f433d.tar.gz",
-						URL:            "http://localhost:8080/file.tar.gz",
-						Revision:       "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
-						Checksum:       "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
-						Digest:         "sha256:889c03dea61a629f2f39c2669f08889cb92173a597e41c9da1d471ec2193f536",
-						LastUpdateTime: metav1.Time{},
-						Size:           pointer.Int64(12742),
+						URL:      "http://localhost:8080/file.tar.gz",
+						Revision: "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
 					}).DieReleasePtr()
-					d.URL("http://localhost:8080/file.tar.gz")
+					d.SHA("531d5230bf97e76e168d1817de64a161195f433d")
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -148,7 +163,15 @@ func TestMonoRepository(t *testing.T) {
 						},
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+						URL:       "https://github.com/garethjevans/monorepository-controller",
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
+						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
+						Ignore:    pointer.String("\n!.git"),
+						SecretRef: &meta.LocalObjectReference{
+							Name: "github-creds",
+						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -180,21 +203,17 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					})
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
 					d.Artifact(&v1alpha1.Artifact{
-						Path:           "gitrepository/dev/my-mono-repository/531d5230bf97e76e168d1817de64a161195f433d.tar.gz",
-						URL:            "http://localhost:8080/file.tar.gz",
-						Revision:       "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
-						Checksum:       "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
-						Digest:         "sha256:889c03dea61a629f2f39c2669f08889cb92173a597e41c9da1d471ec2193f536",
-						LastUpdateTime: metav1.Time{},
-						Size:           pointer.Int64(12742),
+						URL:      "http://localhost:8080/file.tar.gz",
+						Revision: "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
 					}).DieReleasePtr()
-					d.URL("http://localhost:8080/file.tar.gz")
+					d.SHA("531d5230bf97e76e168d1817de64a161195f433d")
 				}).DieReleasePtr(),
 
 			ExpectResource: baseMonoRepo.
@@ -203,25 +222,23 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					}).DieReleasePtr()
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
-					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=")).DieReleasePtr()
+					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum 531d5230bf97e76e168d1817de64a161195f433d")).DieReleasePtr()
 					d.Artifact(&v1alpha1.Artifact{
-						Path:           "gitrepository/dev/my-mono-repository/531d5230bf97e76e168d1817de64a161195f433d.tar.gz",
-						URL:            "http://localhost:8080/file.tar.gz",
-						Revision:       "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
-						Checksum:       "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
-						Digest:         "sha256:889c03dea61a629f2f39c2669f08889cb92173a597e41c9da1d471ec2193f536",
-						LastUpdateTime: metav1.Time{},
-						Size:           pointer.Int64(12742),
+						URL:      "http://localhost:8080/file.tar.gz",
+						Revision: "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
 					}).DieReleasePtr()
-					d.URL("http://localhost:8080/file.tar.gz")
+					d.SHA("531d5230bf97e76e168d1817de64a161195f433d")
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -238,7 +255,15 @@ func TestMonoRepository(t *testing.T) {
 						},
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+						URL:       "https://github.com/garethjevans/monorepository-controller",
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
+						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
+						Ignore:    pointer.String("\n!.git"),
+						SecretRef: &meta.LocalObjectReference{
+							Name: "github-creds",
+						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -270,21 +295,17 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					})
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
 					d.Artifact(&v1alpha1.Artifact{
-						Path:           "gitrepository/dev/my-mono-repository/531d5230bf97e76e168d1817de64a161195f433d.tar.gz",
-						URL:            "http://localhost:8080/previous.tar.gz",
-						Revision:       "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
-						Checksum:       "h1:previous",
-						Digest:         "sha256:889c03dea61a629f2f39c2669f08889cb92173a597e41c9da1d471ec2193f536",
-						LastUpdateTime: metav1.Time{},
-						Size:           pointer.Int64(12742),
+						URL:      "http://localhost:8080/previous.tar.gz",
+						Revision: "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
 					}).DieReleasePtr()
-					d.URL("http://localhost:8080/previous.tar.gz")
+					d.SHA("531d5230bf97e76e168d1817de64a161195f433d")
 				}).DieReleasePtr(),
 
 			ExpectResource: baseMonoRepo.
@@ -293,25 +314,23 @@ func TestMonoRepository(t *testing.T) {
 					d.Generation(1)
 				}).
 				SpecDie(func(d *resources.MonoRepositorySpecDie) {
-					d.GitRepository(apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+					d.GitRepository(v1alpha1.GitRepositorySpec{
+						URL:    "https://github.com/garethjevans/monorepository-controller",
+						Branch: "main",
 					}).DieReleasePtr()
 				}).
 				StatusDie(func(d *resources.MonoRepositoryStatusDie) {
-					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=")).DieReleasePtr()
+					d.ConditionsDie(resources.MonoRepositoryConditionBlank.Status("True").Reason("Succeeded").Message("Repository has been successfully filtered with checksum 531d5230bf97e76e168d1817de64a161195f433d")).DieReleasePtr()
 					d.Artifact(&v1alpha1.Artifact{
-						Path:           "gitrepository/dev/my-mono-repository/531d5230bf97e76e168d1817de64a161195f433d.tar.gz",
-						URL:            "http://localhost:8080/file.tar.gz",
-						Revision:       "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
-						Checksum:       "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
-						Digest:         "sha256:889c03dea61a629f2f39c2669f08889cb92173a597e41c9da1d471ec2193f536",
-						LastUpdateTime: metav1.Time{},
-						Size:           pointer.Int64(12742),
+						URL:      "http://localhost:8080/file.tar.gz",
+						Revision: "main@sha1:531d5230bf97e76e168d1817de64a161195f433d",
 					}).DieReleasePtr()
-					d.URL("http://localhost:8080/file.tar.gz")
+					d.SHA("531d5230bf97e76e168d1817de64a161195f433d")
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -328,7 +347,15 @@ func TestMonoRepository(t *testing.T) {
 						},
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
-						URL: "https://github.com/org/repo",
+						URL:       "https://github.com/garethjevans/monorepository-controller",
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
+						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
+						Ignore:    pointer.String("\n!.git"),
+						SecretRef: &meta.LocalObjectReference{
+							Name: "github-creds",
+						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -355,6 +382,6 @@ func TestMonoRepository(t *testing.T) {
 	}
 
 	ts.Run(t, scheme, func(t *testing.T, rtc *rtesting.SubReconcilerTestCase[*v1alpha1.MonoRepository], c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
-		return controller.NewResourceValidator(c)
+		return controller.NewMonoRepositoryChildReconciler(c)
 	})
 }

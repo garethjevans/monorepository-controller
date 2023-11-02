@@ -26,9 +26,9 @@ import (
 	json "encoding/json"
 	fmtx "fmt"
 	meta "github.com/fluxcd/pkg/apis/meta"
-	v1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
 	apis "github.com/vmware-labs/reconciler-runtime/apis"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -499,15 +499,24 @@ func (d *MonoRepositorySpecDie) DeepCopy() *MonoRepositorySpecDie {
 	}
 }
 
-func (d *MonoRepositorySpecDie) GitRepository(v v1beta2.GitRepositorySpec) *MonoRepositorySpecDie {
+// GitRepository the spec of the git repository to search for changes
+func (d *MonoRepositorySpecDie) GitRepository(v v1alpha1.GitRepositorySpec) *MonoRepositorySpecDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
 		r.GitRepository = v
 	})
 }
 
-func (d *MonoRepositorySpecDie) Include(v string) *MonoRepositorySpecDie {
+// SubPath the subPath in the repository to examine for changes
+func (d *MonoRepositorySpecDie) SubPath(v string) *MonoRepositorySpecDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
-		r.Include = v
+		r.SubPath = v
+	})
+}
+
+// Interval at which to check the MonoRepository for updates.
+func (d *MonoRepositorySpecDie) Interval(v metav1.Duration) *MonoRepositorySpecDie {
+	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
+		r.Interval = v
 	})
 }
 
@@ -699,10 +708,9 @@ func (d *MonoRepositoryStatusDie) Status(v apis.Status) *MonoRepositoryStatusDie
 	})
 }
 
-// URL is the dynamic fetch link for the latest Artifact. It is provided on a "best effort" basis, and using the precise GitRepositoryStatus.Artifact data is recommended.
-func (d *MonoRepositoryStatusDie) URL(v string) *MonoRepositoryStatusDie {
+func (d *MonoRepositoryStatusDie) SHA(v string) *MonoRepositoryStatusDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositoryStatus) {
-		r.URL = v
+		r.SHA = v
 	})
 }
 
@@ -710,20 +718,6 @@ func (d *MonoRepositoryStatusDie) URL(v string) *MonoRepositoryStatusDie {
 func (d *MonoRepositoryStatusDie) Artifact(v *v1alpha1.Artifact) *MonoRepositoryStatusDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositoryStatus) {
 		r.Artifact = v
-	})
-}
-
-// ObservedInclude is the observed list of GitRepository resources used to calculate the checksum for this artifact
-func (d *MonoRepositoryStatusDie) ObservedInclude(v string) *MonoRepositoryStatusDie {
-	return d.DieStamp(func(r *v1alpha1.MonoRepositoryStatus) {
-		r.ObservedInclude = v
-	})
-}
-
-// ObservedFileList is the file list used to calculate the checksum for this artifact
-func (d *MonoRepositoryStatusDie) ObservedFileList(v string) *MonoRepositoryStatusDie {
-	return d.DieStamp(func(r *v1alpha1.MonoRepositoryStatus) {
-		r.ObservedFileList = v
 	})
 }
 

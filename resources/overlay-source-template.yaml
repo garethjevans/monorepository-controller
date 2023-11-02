@@ -5,7 +5,7 @@ metadata:
   namespace: tap-install
 type: Opaque
 stringData:
-  patch.yml: |
+  patch1.yml: |
     #@ load("@ytt:overlay", "overlay")
     #@overlay/match by=overlay.subset({"kind":"ClusterSourceTemplate", "metadata": {"name":"source-template"}}),expects="1+"
     ---
@@ -90,17 +90,6 @@ stringData:
         #@   end
         #@   return url
         #@ end
-    
-        #@ def include():
-        #@   if hasattr(data.values.workload.spec.source, "subPath"):
-        #@     return "\n".join([
-        #@         "!*",
-        #@         "/" + data.values.workload.spec.source.subPath,
-        #@         "!.*"]
-        #@     ) + "\n"
-        #@   end
-        #@   return "*\n"
-        #@ end
         
         #@ if/end param("maven"):
         ---
@@ -147,17 +136,13 @@ stringData:
           annotations:
             apps.tanzu.vmware.com/correlationid: #@ correlationId()
         spec:
-          include: #@ include()
+          #@ if/end hasattr(data.values.workload.spec.source, "subPath"):
+          subPath: #@ data.values.workload.spec.source.subPath
           gitRepository:
-            interval: 1m0s
             url: #@ data.values.workload.spec.source.git.url
-            ref: #@ data.values.workload.spec.source.git.ref
-            gitImplementation: #@ data.values.params.gitImplementation
-            ignore: |
-              !.git
-            #@ if/end param("gitops_ssh_secret"):
-            secretRef:
-              name: #@ param("gitops_ssh_secret")     
+            branch: #@ data.values.workload.spec.source.git.ref.branch
+            kind: ""
+          interval: 1m0s
         #@ end
 
         

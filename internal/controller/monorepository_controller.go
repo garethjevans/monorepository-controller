@@ -19,16 +19,22 @@ package controller
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+	"net/url"
+	client2 "sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
+	"time"
+
+	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/garethjevans/monorepository-controller/internal/monorepo"
+	"github.com/jenkins-x/go-scm/scm/factory"
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 
 	apiv1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
 	"github.com/garethjevans/monorepository-controller/internal/util"
 	"github.com/vmware-labs/reconciler-runtime/reconcilers"
-	"golang.org/x/mod/sumdb/dirhash"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -37,21 +43,86 @@ import (
 //+kubebuilder:rbac:groups=source.garethjevans.org,resources=monorepositories/finalizers,verbs=update
 //+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=patch;create;update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func NewMonoRepositoryReconciler(c reconcilers.Config) *reconcilers.ResourceReconciler[*v1alpha1.MonoRepository] {
 	return &reconcilers.ResourceReconciler[*v1alpha1.MonoRepository]{
 		Name: "MonoRepository",
 		Reconciler: reconcilers.Sequence[*v1alpha1.MonoRepository]{
-			NewResourceValidator(c),
+			NewMonoRepositoryChildReconciler(c),
+			NewRequeueReconciler(c),
 		},
 		Config: c,
 	}
 }
 
-func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
+func NewRequeueReconciler(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
+	return &reconcilers.SyncReconciler[*v1alpha1.MonoRepository]{
+		Name: "Requeue",
+		SyncWithResult: func(ctx context.Context, resource *v1alpha1.MonoRepository) (reconcilers.Result, error) {
+			return reconcilers.Result{Requeue: true, RequeueAfter: resource.Spec.Interval.Duration}, nil
+		},
+	}
+}
+
+func NewMonoRepositoryChildReconciler(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
 	return &reconcilers.ChildReconciler[*v1alpha1.MonoRepository, *apiv1beta2.GitRepository, *apiv1beta2.GitRepositoryList]{
 		Name: "GitRepository",
 		DesiredChild: func(ctx context.Context, parent *v1alpha1.MonoRepository) (*apiv1beta2.GitRepository, error) {
+			log := util.L(ctx)
+
+			secrets := corev1.SecretList{}
+			err := c.List(ctx, &secrets, client2.InNamespace(parent.Namespace))
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to list secrets")
+			}
+
+			serverURL, repository := ParseURLIntoServerAndPath(parent.Spec.GitRepository.URL)
+
+			secret := FindSecret(secrets, parent.Namespace, serverURL)
+
+			if secret == nil {
+				return nil, fmt.Errorf("unable to find auth for %s", serverURL)
+			}
+
+			log.Info("constructing scm client",
+				"url", serverURL,
+				"kind", parent.Spec.GitRepository.Kind,
+				"secret", secret.Name,
+				"annotations", secret.Annotations["tekton.dev/git-0"],
+				"secretsSearched", len(secrets.Items))
+
+			client, err := factory.NewClient(parent.Spec.GitRepository.Kind,
+				serverURL,
+				string(secret.Data["password"]))
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to create scmClient")
+			}
+
+			var previousCommit string
+			if parent.Status.Artifact != nil {
+				previousCommit = parent.Status.SHA
+			}
+
+			branch := parent.Spec.GitRepository.Branch
+			subPath := parent.Spec.SubPath
+			log.Info("looking for changes since",
+				"repo", repository,
+				"branch", branch,
+				"commit", previousCommit,
+				"subPath", subPath)
+
+			// repository string, branch string, previousCommit string, subPath string
+			sha, err := monorepo.DetermineClonePoint(client,
+				repository,
+				branch,
+				previousCommit,
+				subPath)
+			if err != nil {
+				log.Error(err, "unable to determine clone point")
+				return nil, errors.Wrap(err, "unable to determine clone point")
+			}
+
 			child := &apiv1beta2.GitRepository{
 				ObjectMeta: v1.ObjectMeta{
 					Labels:      FilterLabelsOrAnnotations(reconcilers.MergeMaps(parent.Labels)),
@@ -59,9 +130,20 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 					Name:        parent.Name,
 					Namespace:   parent.Namespace,
 				},
-				Spec: parent.Spec.GitRepository,
+				Spec: apiv1beta2.GitRepositorySpec{
+					URL: parent.Spec.GitRepository.URL,
+					SecretRef: &meta.LocalObjectReference{
+						Name: secret.Name,
+					},
+					Interval: v1.Duration{Duration: 0 * time.Minute},
+					Reference: &apiv1beta2.GitRepositoryRef{
+						Commit: sha,
+					},
+					Ignore:            pointer.String("\n!.git"),
+					Timeout:           &v1.Duration{Duration: 1 * time.Minute},
+					GitImplementation: "go-git",
+				},
 			}
-
 			return child, nil
 		},
 		MergeBeforeUpdate: func(actual, desired *apiv1beta2.GitRepository) {
@@ -69,87 +151,27 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 			actual.Spec = desired.Spec
 		},
 		ReflectChildStatusOnParent: func(ctx context.Context, parent *v1alpha1.MonoRepository, child *apiv1beta2.GitRepository, err error) {
-			log := util.L(ctx)
+			//log := util.L(ctx)
+
+			if err != nil {
+				parent.Status.MarkFailed(ctx, err)
+			}
 
 			if child == nil {
-				// parent.Status.MarkCustomRunFailed("Failed", "Failed to resolve")
+				// if there is not child yet, there could be a failure that we've already handled?
 			} else {
-				// if child status == Ready == true
+				// if we are ready, we should copy the childs URL & revision to the parent
 				if isReady(child) {
-					tempDir, err := os.MkdirTemp("", "tmp")
-					if err != nil {
-						parent.Status.MarkFailed(ctx, err)
-						return
+					parent.Status.SHA = extractSha(child.Status.Artifact.Revision)
+					if parent.Status.Artifact == nil {
+						parent.Status.Artifact = &v1alpha1.Artifact{}
 					}
-					// cleanup on exit
-					defer os.RemoveAll(tempDir)
+					parent.Status.Artifact.URL = child.Status.Artifact.URL
+					parent.Status.Artifact.Revision = child.Status.Artifact.Revision
 
-					log.Info("created temp dir", "dir", tempDir)
-
-					// download the filter and copy from/to path
-					tarGzLocation := filepath.Join(tempDir, fmt.Sprintf("%s.tar.gz", child.Name))
-					err = util.DownloadFile(tarGzLocation, child.Status.Artifact.URL)
-					if err != nil {
-						parent.Status.MarkFailed(ctx, err)
-						return
-					}
-
-					// extract tar.gz to temp location
-					tarGzExtractedLocation := filepath.Join(tempDir, fmt.Sprintf("%s-extracted", child.Name))
-					err = util.ExtractTarGz(tarGzLocation, tarGzExtractedLocation)
-					if err != nil {
-						parent.Status.MarkFailed(ctx, err)
-						return
-					}
-
-					files, err := util.ListFiles(tarGzExtractedLocation)
-					if err != nil {
-						parent.Status.MarkFailed(ctx, err)
-						return
-					}
-
-					log.Info("Full file list", "files", files)
-					filteredFiles := util.FilterFileList(files, parent.Spec.Include)
-					log.Info("Using files for checksum calculation", "files", filteredFiles)
-					parent.Status.ObservedFileList = strings.Join(filteredFiles, "\n")
-
-					hash, err := dirhash.Hash1(filteredFiles, func(name string) (io.ReadCloser, error) {
-						return os.Open(filepath.Join(tarGzExtractedLocation, name))
-					})
-					if err != nil {
-						parent.Status.MarkFailed(ctx, err)
-						return
-					}
-
-					log.Info("Calculated checksum", "checksum", hash)
-
-					if parent.Status.Artifact != nil && parent.Status.Artifact.Checksum == hash {
-						// nothing has changed, do nothing
-						log.Info("Source hasn't changed, there is nothing to update")
-					} else {
-						old := "<NA>"
-						if parent.Status.Artifact != nil {
-							old = parent.Status.Artifact.Checksum
-						}
-
-						log.Info("Source has changed! updating status with new checksum",
-							"checksum", hash,
-							"old", old)
-						parent.Status.Artifact = &v1alpha1.Artifact{
-							Path:           child.Status.Artifact.Path,
-							URL:            child.Status.Artifact.URL,
-							Revision:       child.Status.Artifact.Revision,
-							Checksum:       hash,
-							Digest:         child.Status.Artifact.Digest,
-							LastUpdateTime: child.Status.Artifact.LastUpdateTime,
-							Size:           child.Status.Artifact.Size,
-							Metadata:       child.Status.Artifact.Metadata,
-						}
-						parent.Status.URL = child.Status.Artifact.URL
-					}
-
-					//resource.Status.ObservedInclude = resource.Spec.Include
-					parent.Status.MarkReady(ctx, hash)
+					parent.Status.MarkReady(ctx, parent.Status.SHA)
+				} else {
+					// FIXME what should we do if we're not ready?
 				}
 			}
 		},
@@ -157,6 +179,33 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 			return child.Spec
 		},
 	}
+}
+
+func extractSha(revision string) string {
+	return strings.Split(revision, ":")[1]
+}
+
+func FindSecret(list corev1.SecretList, namespace string, serverURL string) *corev1.Secret {
+	for _, secret := range list.Items {
+		if secret.Type == "kubernetes.io/basic-auth" && secret.Namespace == namespace {
+			// FIXME should we check for git-n here?
+			val, ok := secret.Annotations["tekton.dev/git-0"]
+			// FIXME should we use a string contains here?
+			if ok && val == serverURL {
+				return &secret
+			}
+		}
+	}
+	return nil
+}
+
+func ParseURLIntoServerAndPath(in string) (string, string) {
+	u, err := url.Parse(in)
+	if err != nil {
+		panic(err)
+	}
+
+	return fmt.Sprintf("%s://%s", u.Scheme, u.Host), strings.TrimPrefix(u.Path, "/")
 }
 
 func isReady(child *apiv1beta2.GitRepository) bool {
