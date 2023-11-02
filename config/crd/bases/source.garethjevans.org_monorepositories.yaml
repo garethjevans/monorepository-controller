@@ -21,18 +21,21 @@ spec:
     - jsonPath: .spec.gitRepository.url
       name: URL
       type: string
+    - jsonPath: .spec.gitRepository.kind
+      name: Kind
+      type: string
     - jsonPath: .spec.gitRepository.branch
       name: Branch
       type: string
-    - jsonPath: .spec.gitRepository.subPath
+    - jsonPath: .spec.subPath
       name: SubPath
+      type: string
+    - jsonPath: .status.sha
+      name: SHA
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .status.artifact.revision
-      name: Revision
-      type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
@@ -57,7 +60,8 @@ spec:
             description: MonoRepositorySpec defines the structure of the mono repository.
             properties:
               gitRepository:
-                description: GitRepositorySpec defines the structure of a git repository.
+                description: GitRepository the spec of the git repository to search
+                  for changes
                 properties:
                   branch:
                     type: string
@@ -69,11 +73,17 @@ spec:
                 - branch
                 - url
                 type: object
+              interval:
+                description: Interval at which to check the MonoRepository for updates.
+                pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                type: string
               subPath:
+                description: SubPath the subPath in the repository to examine for
+                  changes
                 type: string
             required:
             - gitRepository
-            - subPath
+            - interval
             type: object
           status:
             description: MonoRepositoryStatus defines the observed state of MonoRepository.

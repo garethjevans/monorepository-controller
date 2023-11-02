@@ -28,6 +28,7 @@ import (
 	meta "github.com/fluxcd/pkg/apis/meta"
 	"github.com/garethjevans/monorepository-controller/api/v1alpha1"
 	apis "github.com/vmware-labs/reconciler-runtime/apis"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -498,15 +499,24 @@ func (d *MonoRepositorySpecDie) DeepCopy() *MonoRepositorySpecDie {
 	}
 }
 
+// GitRepository the spec of the git repository to search for changes
 func (d *MonoRepositorySpecDie) GitRepository(v v1alpha1.GitRepositorySpec) *MonoRepositorySpecDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
 		r.GitRepository = v
 	})
 }
 
+// SubPath the subPath in the repository to examine for changes
 func (d *MonoRepositorySpecDie) SubPath(v string) *MonoRepositorySpecDie {
 	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
 		r.SubPath = v
+	})
+}
+
+// Interval at which to check the MonoRepository for updates.
+func (d *MonoRepositorySpecDie) Interval(v metav1.Duration) *MonoRepositorySpecDie {
+	return d.DieStamp(func(r *v1alpha1.MonoRepositorySpec) {
+		r.Interval = v
 	})
 }
 

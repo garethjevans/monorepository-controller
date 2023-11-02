@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	client2 "sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 	"time"
 
@@ -42,35 +43,43 @@ import (
 //+kubebuilder:rbac:groups=source.garethjevans.org,resources=monorepositories/finalizers,verbs=update
 //+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=patch;create;update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func NewMonoRepositoryReconciler(c reconcilers.Config) *reconcilers.ResourceReconciler[*v1alpha1.MonoRepository] {
 	return &reconcilers.ResourceReconciler[*v1alpha1.MonoRepository]{
 		Name: "MonoRepository",
 		Reconciler: reconcilers.Sequence[*v1alpha1.MonoRepository]{
-			NewResourceValidator(c),
+			NewMonoRepositoryChildReconciler(c),
+			NewRequeueReconciler(c),
 		},
 		Config: c,
 	}
 }
 
-func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
+func NewRequeueReconciler(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
+	return &reconcilers.SyncReconciler[*v1alpha1.MonoRepository]{
+		Name: "Requeue",
+		SyncWithResult: func(ctx context.Context, resource *v1alpha1.MonoRepository) (reconcilers.Result, error) {
+			return reconcilers.Result{Requeue: true, RequeueAfter: resource.Spec.Interval.Duration}, nil
+		},
+	}
+}
+
+func NewMonoRepositoryChildReconciler(c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
 	return &reconcilers.ChildReconciler[*v1alpha1.MonoRepository, *apiv1beta2.GitRepository, *apiv1beta2.GitRepositoryList]{
 		Name: "GitRepository",
 		DesiredChild: func(ctx context.Context, parent *v1alpha1.MonoRepository) (*apiv1beta2.GitRepository, error) {
 			log := util.L(ctx)
 
 			secrets := corev1.SecretList{}
-			err := c.List(ctx, &secrets)
+			err := c.List(ctx, &secrets, client2.InNamespace(parent.Namespace))
 			if err != nil {
 				return nil, errors.Wrap(err, "unable to list secrets")
 			}
 
-			// FIXME how do I get the secret for this?
-			// FIXME we now need to do most of the work in here
-
 			serverURL, repository := ParseURLIntoServerAndPath(parent.Spec.GitRepository.URL)
 
-			secret := FindSecret(secrets, serverURL)
+			secret := FindSecret(secrets, parent.Namespace, serverURL)
 
 			if secret == nil {
 				return nil, fmt.Errorf("unable to find auth for %s", serverURL)
@@ -80,7 +89,8 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 				"url", serverURL,
 				"kind", parent.Spec.GitRepository.Kind,
 				"secret", secret.Name,
-				"annotations", secret.Annotations)
+				"annotations", secret.Annotations["tekton.dev/git-0"],
+				"secretsSearched", len(secrets.Items))
 
 			client, err := factory.NewClient(parent.Spec.GitRepository.Kind,
 				serverURL,
@@ -91,7 +101,7 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 
 			var previousCommit string
 			if parent.Status.Artifact != nil {
-				previousCommit = parent.Status.Artifact.Revision
+				previousCommit = parent.Status.SHA
 			}
 
 			branch := parent.Spec.GitRepository.Branch
@@ -125,15 +135,15 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 					SecretRef: &meta.LocalObjectReference{
 						Name: secret.Name,
 					},
-					// FIXME how do we pass this? should we even pass this? as we're setting a sha this will never update
-					Interval: v1.Duration{Duration: 1 * time.Minute},
+					Interval: v1.Duration{Duration: 0 * time.Minute},
 					Reference: &apiv1beta2.GitRepositoryRef{
 						Commit: sha,
 					},
-					Ignore: pointer.String("!.git"),
+					Ignore:            pointer.String("\n!.git"),
+					Timeout:           &v1.Duration{Duration: 1 * time.Minute},
+					GitImplementation: "go-git",
 				},
 			}
-
 			return child, nil
 		},
 		MergeBeforeUpdate: func(actual, desired *apiv1beta2.GitRepository) {
@@ -141,15 +151,17 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 			actual.Spec = desired.Spec
 		},
 		ReflectChildStatusOnParent: func(ctx context.Context, parent *v1alpha1.MonoRepository, child *apiv1beta2.GitRepository, err error) {
-			log := util.L(ctx)
+			//log := util.L(ctx)
+
+			if err != nil {
+				parent.Status.MarkFailed(ctx, err)
+			}
 
 			if child == nil {
-				// parent.Status.MarkCustomRunFailed("Failed", "Failed to resolve")
+				// if there is not child yet, there could be a failure that we've already handled?
 			} else {
 				// if we are ready, we should copy the childs URL & revision to the parent
 				if isReady(child) {
-					log.Info("FIXME - need to copy status across", "parent", parent, "child", child)
-
 					parent.Status.SHA = extractSha(child.Status.Artifact.Revision)
 					if parent.Status.Artifact == nil {
 						parent.Status.Artifact = &v1alpha1.Artifact{}
@@ -158,6 +170,8 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 					parent.Status.Artifact.Revision = child.Status.Artifact.Revision
 
 					parent.Status.MarkReady(ctx, parent.Status.SHA)
+				} else {
+					// FIXME what should we do if we're not ready?
 				}
 			}
 		},
@@ -171,9 +185,9 @@ func extractSha(revision string) string {
 	return strings.Split(revision, ":")[1]
 }
 
-func FindSecret(list corev1.SecretList, serverURL string) *corev1.Secret {
+func FindSecret(list corev1.SecretList, namespace string, serverURL string) *corev1.Secret {
 	for _, secret := range list.Items {
-		if secret.Type == "kubernetes.io/basic-auth" {
+		if secret.Type == "kubernetes.io/basic-auth" && secret.Namespace == namespace {
 			// FIXME should we check for git-n here?
 			val, ok := secret.Annotations["tekton.dev/git-0"]
 			// FIXME should we use a string contains here?

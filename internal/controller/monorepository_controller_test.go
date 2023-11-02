@@ -47,7 +47,7 @@ func TestMonoRepository(t *testing.T) {
 
 	go ServeDir(t, "testdata")
 
-	secret := corev1.Secret{
+	githubSecret := corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
@@ -62,6 +62,25 @@ func TestMonoRepository(t *testing.T) {
 		Data: map[string][]byte{
 			"username": []byte("garethjevans"),
 			"password": []byte(os.Getenv("GITHUB_TOKEN")),
+		},
+		Type: "kubernetes.io/basic-auth",
+	}
+
+	gitlabSecret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gitlab-creds",
+			Namespace: "dev",
+			Annotations: map[string]string{
+				"tekton.dev/git-0": "https://gitlab.eng.vmware.com",
+			},
+		},
+		Data: map[string][]byte{
+			"username": []byte("gevans"),
+			"password": []byte(os.Getenv("GITLAB_TOKEN")),
 		},
 		Type: "kubernetes.io/basic-auth",
 	}
@@ -126,7 +145,8 @@ func TestMonoRepository(t *testing.T) {
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
-				&secret,
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -144,12 +164,14 @@ func TestMonoRepository(t *testing.T) {
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
 						URL:       "https://github.com/garethjevans/monorepository-controller",
-						Interval:  metav1.Duration{Duration: 1 * time.Minute},
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
 						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
-						Ignore:    pointer.String("!.git"),
+						Ignore:    pointer.String("\n!.git"),
 						SecretRef: &meta.LocalObjectReference{
 							Name: "github-creds",
 						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -215,7 +237,8 @@ func TestMonoRepository(t *testing.T) {
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
-				&secret,
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -233,12 +256,14 @@ func TestMonoRepository(t *testing.T) {
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
 						URL:       "https://github.com/garethjevans/monorepository-controller",
-						Interval:  metav1.Duration{Duration: 1 * time.Minute},
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
 						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
-						Ignore:    pointer.String("!.git"),
+						Ignore:    pointer.String("\n!.git"),
 						SecretRef: &meta.LocalObjectReference{
 							Name: "github-creds",
 						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -304,7 +329,8 @@ func TestMonoRepository(t *testing.T) {
 				}).DieReleasePtr(),
 
 			GivenObjects: []client.Object{
-				&secret,
+				&githubSecret,
+				&gitlabSecret,
 				&apiv1beta2.GitRepository{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
@@ -322,12 +348,14 @@ func TestMonoRepository(t *testing.T) {
 					},
 					Spec: apiv1beta2.GitRepositorySpec{
 						URL:       "https://github.com/garethjevans/monorepository-controller",
-						Interval:  metav1.Duration{Duration: 1 * time.Minute},
+						Interval:  metav1.Duration{Duration: 0 * time.Minute},
 						Reference: &apiv1beta2.GitRepositoryRef{Commit: "73e2c51e596750d4a830d5666dda84eb20b9026c"},
-						Ignore:    pointer.String("!.git"),
+						Ignore:    pointer.String("\n!.git"),
 						SecretRef: &meta.LocalObjectReference{
 							Name: "github-creds",
 						},
+						Timeout:           &metav1.Duration{Duration: 1 * time.Minute},
+						GitImplementation: "go-git",
 					},
 					Status: apiv1beta2.GitRepositoryStatus{
 						Conditions: []metav1.Condition{
@@ -354,6 +382,6 @@ func TestMonoRepository(t *testing.T) {
 	}
 
 	ts.Run(t, scheme, func(t *testing.T, rtc *rtesting.SubReconcilerTestCase[*v1alpha1.MonoRepository], c reconcilers.Config) reconcilers.SubReconciler[*v1alpha1.MonoRepository] {
-		return controller.NewResourceValidator(c)
+		return controller.NewMonoRepositoryChildReconciler(c)
 	})
 }
