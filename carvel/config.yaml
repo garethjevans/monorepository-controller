@@ -688,6 +688,8 @@ spec:
             - ALL
       securityContext:
         runAsNonRoot: true
+        seccompProfile: 
+          type: RuntimeDefault
       serviceAccountName: monorepository-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
