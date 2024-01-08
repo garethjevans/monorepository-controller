@@ -121,8 +121,8 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
-github.com/vmware-labs/reconciler-runtime v0.15.1 h1:c9lMawF/EkFTWk9QbA7PFb5NAAm99FMDXoJaVkamzw8=
-github.com/vmware-labs/reconciler-runtime v0.15.1/go.mod h1:w1X3EW0G6Z6+sTI8VKjKIIDPhDFrO2hFDpiRFZhdNXc=
+github.com/vmware-labs/reconciler-runtime v0.16.0 h1:5pgbYKXsXUgv+1/LloMDkZKXL/JARfN9mFPtTJ/OxiY=
+github.com/vmware-labs/reconciler-runtime v0.16.0/go.mod h1:c7Lks2egup2BZiOw9r7M8mYJzj/SZOXPsqEst0QmTyg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=

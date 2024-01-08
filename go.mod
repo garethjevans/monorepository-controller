@@ -9,7 +9,7 @@ require (
 	github.com/fluxcd/source-controller/api v1.2.3
 	github.com/go-logr/logr v1.4.1
 	github.com/stretchr/testify v1.8.4
-	github.com/vmware-labs/reconciler-runtime v0.15.1
+	github.com/vmware-labs/reconciler-runtime v0.16.0
 	golang.org/x/mod v0.14.0
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
