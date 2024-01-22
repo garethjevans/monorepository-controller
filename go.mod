@@ -12,7 +12,7 @@ require (
 	github.com/vmware-labs/reconciler-runtime v0.15.1
 	golang.org/x/mod v0.14.0
 	k8s.io/api v0.29.0
-	k8s.io/apimachinery v0.29.0
+	k8s.io/apimachinery v0.29.1
 	k8s.io/client-go v0.29.0
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661
 	sigs.k8s.io/controller-runtime v0.16.3
