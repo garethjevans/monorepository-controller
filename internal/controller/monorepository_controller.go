@@ -70,88 +70,101 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 		},
 		ReflectChildStatusOnParent: func(ctx context.Context, parent *v1alpha1.MonoRepository, child *apiv1beta2.GitRepository, err error) {
 			log := util.L(ctx)
-
-			if child != nil && isReady(child) {
-				tempDir, err := os.MkdirTemp("", "tmp")
-				if err != nil {
-					parent.Status.MarkFailed(ctx, err)
-					return
-				}
-				// cleanup on exit
-				defer os.RemoveAll(tempDir)
-
-				log.Info("created temp dir", "dir", tempDir)
-
-				// download the filter and copy from/to path
-				tarGzLocation := filepath.Join(tempDir, fmt.Sprintf("%s.tar.gz", child.Name))
-				err = util.DownloadFile(tarGzLocation, child.Status.Artifact.URL)
-				if err != nil {
-					parent.Status.MarkFailed(ctx, err)
-					return
-				}
-
-				// extract tar.gz to temp location
-				tarGzExtractedLocation := filepath.Join(tempDir, fmt.Sprintf("%s-extracted", child.Name))
-				err = util.ExtractTarGz(tarGzLocation, tarGzExtractedLocation)
-				if err != nil {
-					parent.Status.MarkFailed(ctx, err)
-					return
-				}
-
-				files, err := util.ListFiles(tarGzExtractedLocation)
-				if err != nil {
-					parent.Status.MarkFailed(ctx, err)
-					return
-				}
-
-				log.Info("Full file list", "files", files)
-				filteredFiles := util.FilterFileList(files, parent.Spec.Include)
-				log.Info("Using files for checksum calculation", "files", filteredFiles)
-				parent.Status.ObservedFileList = strings.Join(filteredFiles, "\n")
-
-				hash, err := dirhash.Hash1(filteredFiles, func(name string) (io.ReadCloser, error) {
-					return os.Open(filepath.Join(tarGzExtractedLocation, name))
-				})
-				if err != nil {
-					parent.Status.MarkFailed(ctx, err)
-					return
-				}
-
-				log.Info("Calculated checksum", "checksum", hash)
-
-				if parent.Status.Artifact != nil && parent.Status.Artifact.Checksum == hash {
-					// nothing has changed, do nothing
-					log.Info("Source hasn't changed, there is nothing to update")
-				} else {
-					old := "<NA>"
-					if parent.Status.Artifact != nil {
-						old = parent.Status.Artifact.Checksum
-					}
-
-					log.Info("Source has changed! updating status with new checksum",
-						"checksum", hash,
-						"old", old)
-					parent.Status.Artifact = &v1alpha1.Artifact{
-						Path:           child.Status.Artifact.Path,
-						URL:            child.Status.Artifact.URL,
-						Revision:       child.Status.Artifact.Revision,
-						Checksum:       hash,
-						Digest:         child.Status.Artifact.Digest,
-						LastUpdateTime: child.Status.Artifact.LastUpdateTime,
-						Size:           child.Status.Artifact.Size,
-						Metadata:       child.Status.Artifact.Metadata,
-					}
-					parent.Status.URL = child.Status.Artifact.URL
-				}
-
-				//resource.Status.ObservedInclude = resource.Spec.Include
-				parent.Status.MarkReady(ctx, hash)
+			if parent == nil || child == nil {
+				return
 			}
+			if !isReady(child) {
+				return
+			}
+			if !hasArtifactURL(child) {
+				log.Info("no artifactURL present")
+				return
+			}
+
+			tempDir, err := os.MkdirTemp("", "tmp")
+			if err != nil {
+				parent.Status.MarkFailed(ctx, err)
+				return
+			}
+			// cleanup on exit
+			defer os.RemoveAll(tempDir)
+
+			log.Info("created temp dir", "dir", tempDir)
+
+			// download the filter and copy from/to path
+			tarGzLocation := filepath.Join(tempDir, fmt.Sprintf("%s.tar.gz", child.Name))
+			if err := util.DownloadFile(tarGzLocation, child.Status.Artifact.URL); err != nil {
+				parent.Status.MarkFailed(ctx, err)
+				return
+			}
+
+			// extract tar.gz to temp location
+			tarGzExtractedLocation := filepath.Join(tempDir, fmt.Sprintf("%s-extracted", child.Name))
+			if err := util.ExtractTarGz(tarGzLocation, tarGzExtractedLocation); err != nil {
+				parent.Status.MarkFailed(ctx, err)
+				return
+			}
+
+			files, err := util.ListFiles(tarGzExtractedLocation)
+			if err != nil {
+				parent.Status.MarkFailed(ctx, err)
+				return
+			}
+
+			log.Info("Full file list", "files", files)
+			filteredFiles := util.FilterFileList(files, parent.Spec.Include)
+			log.Info("Using files for checksum calculation", "files", filteredFiles)
+			parent.Status.ObservedFileList = strings.Join(filteredFiles, "\n")
+
+			hash, err := dirhash.Hash1(filteredFiles, func(name string) (io.ReadCloser, error) {
+				return os.Open(filepath.Join(tarGzExtractedLocation, name))
+			})
+			if err != nil {
+				parent.Status.MarkFailed(ctx, err)
+				return
+			}
+
+			log.Info("Calculated checksum", "checksum", hash)
+
+			if parent.Status.Artifact != nil && parent.Status.Artifact.Checksum == hash {
+				log.Info("Source hasn't changed, there is nothing to update")
+				parent.Status.MarkReady(ctx, hash)
+				return
+			}
+
+			old := "<NA>"
+			if parent.Status.Artifact != nil {
+				old = parent.Status.Artifact.Checksum
+			}
+
+			log.Info("Source has changed! updating status with new checksum", "checksum", hash, "old", old)
+			parent.Status.Artifact = &v1alpha1.Artifact{
+				Path:           child.Status.Artifact.Path,
+				URL:            child.Status.Artifact.URL,
+				Revision:       child.Status.Artifact.Revision,
+				Checksum:       hash,
+				Digest:         child.Status.Artifact.Digest,
+				LastUpdateTime: child.Status.Artifact.LastUpdateTime,
+				Size:           child.Status.Artifact.Size,
+				Metadata:       child.Status.Artifact.Metadata,
+			}
+			parent.Status.URL = child.Status.Artifact.URL
+			parent.Status.MarkReady(ctx, hash)
 		},
 		Sanitize: func(child *apiv1beta2.GitRepository) any {
 			return child.Spec
 		},
 	}
+}
+
+func hasArtifactURL(child *apiv1beta2.GitRepository) bool {
+	if child.Status.Artifact == nil {
+		return false
+	}
+	if len(child.Status.Artifact.URL) == 0 {
+		return false
+	}
+	return true
 }
 
 func isReady(child *apiv1beta2.GitRepository) bool {

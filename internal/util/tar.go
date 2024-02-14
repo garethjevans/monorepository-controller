@@ -40,13 +40,11 @@ func ExtractTarGz(tarGzPath string, dir string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Println("Creating", p)
 			if err := os.MkdirAll(p, 0755); err != nil {
 				return err
 			}
 		case tar.TypeReg:
 			p, err := SanitizeArchivePath(dir, header.Name)
-			fmt.Println("Extracting", p)
 			if err != nil {
 				return err
 			}

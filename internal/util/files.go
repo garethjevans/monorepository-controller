@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -41,12 +42,15 @@ func FilterFileList(list []string, include string) []string {
 // DownloadFile will download a url to a local file. It's efficient because it will
 // write as it downloads and not load the whole file into memory.
 func DownloadFile(filepath string, url string) error {
-	// Get the data
-	resp, err := http.Get(validate(url))
+	validURL, err := validate(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	// Get the data
+	resp, err := http.Get(validURL)
+	if err != nil {
+		return err
+	}
 
 	// Create the file
 	out, err := os.Create(filepath)
@@ -60,9 +64,9 @@ func DownloadFile(filepath string, url string) error {
 	return err
 }
 
-func validate(in string) string {
+func validate(in string) (string, error) {
 	if strings.HasPrefix(in, "https://") && strings.HasPrefix(in, "http://") {
-		panic("unable to use url" + in)
+		return "", errors.New("invalid url provided, it should have prefix https:// or http://")
 	}
-	return in
+	return in, nil
 }
