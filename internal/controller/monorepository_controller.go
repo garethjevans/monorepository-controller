@@ -74,6 +74,7 @@ func NewResourceValidator(c reconcilers.Config) reconcilers.SubReconciler[*v1alp
 				return
 			}
 			if !isReady(child) {
+				log.Info("child is not ready")
 				return
 			}
 			if !hasArtifactURL(child) {
