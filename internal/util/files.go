@@ -51,7 +51,10 @@ func DownloadFile(filepath string, url string) error {
 	if err != nil {
 		return err
 	}
-
+	defer resp.Body.Close()
+	if resp.Body == nil {
+		return errors.New("received nil body")
+	}
 	// Create the file
 	out, err := os.Create(filepath)
 	if err != nil {
